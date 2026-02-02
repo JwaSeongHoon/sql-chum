@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Plus, Pencil, Trash2, Download, Upload, CheckCircle, XCircle, Loader2, AlertTriangle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Pencil, Trash2, Download, Upload, CheckCircle, XCircle, Loader2, AlertTriangle, Server, RefreshCw } from 'lucide-react';
 import { useSQLEditorStore } from '@/store/sqlEditorStore';
 import { DBMSConfig, DBMSType, DBMS_TYPE_CONFIGS } from '@/types/database';
-import { testConnection } from '@/services/sqlExecutor';
+import { testConnection, checkProxyHealth } from '@/services/sqlExecutor';
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,7 @@ interface ConnectionManagerModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type ModalView = 'list' | 'add' | 'edit';
+type ModalView = 'list' | 'add' | 'edit' | 'proxy';
 
 interface ConnectionFormData {
   type: DBMSType;
@@ -70,7 +70,19 @@ const defaultFormData: ConnectionFormData = {
 };
 
 export function ConnectionManagerModal({ open, onOpenChange }: ConnectionManagerModalProps) {
-  const { userConnections, addConnection, updateConnection, deleteConnection, exportData, importData } = useSQLEditorStore();
+  const { 
+    userConnections, 
+    addConnection, 
+    updateConnection, 
+    deleteConnection, 
+    exportData, 
+    importData,
+    proxyUrl,
+    proxyConnected,
+    proxyMessage,
+    setProxyUrl,
+    checkProxy,
+  } = useSQLEditorStore();
   
   const [view, setView] = useState<ModalView>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -78,6 +90,16 @@ export function ConnectionManagerModal({ open, onOpenChange }: ConnectionManager
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [proxyUrlInput, setProxyUrlInput] = useState(proxyUrl);
+  const [checkingProxy, setCheckingProxy] = useState(false);
+  
+  // 모달 열릴 때 프록시 상태 확인
+  useEffect(() => {
+    if (open) {
+      checkProxy();
+      setProxyUrlInput(proxyUrl);
+    }
+  }, [open, proxyUrl, checkProxy]);
   const [connectionToDelete, setConnectionToDelete] = useState<DBMSConfig | null>(null);
   
   const resetForm = () => {
@@ -135,7 +157,24 @@ export function ConnectionManagerModal({ open, onOpenChange }: ConnectionManager
     setTestResult(null);
     
     try {
-      const result = await testConnection(formData.type);
+      // 임시 DBMSConfig 객체 생성
+      const tempConfig: DBMSConfig = {
+        id: 'temp',
+        type: formData.type,
+        name: formData.type,
+        displayName: formData.displayName,
+        host: formData.host,
+        port: formData.port,
+        database: formData.database,
+        username: formData.username,
+        password: formData.password,
+        icon: DBMS_TYPE_CONFIGS[formData.type].icon,
+        color: DBMS_TYPE_CONFIGS[formData.type].color,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      
+      const result = await testConnection(tempConfig);
       setTestResult(result);
     } catch (error) {
       setTestResult({ success: false, message: '연결 테스트 중 오류가 발생했습니다.' });
@@ -212,8 +251,102 @@ export function ConnectionManagerModal({ open, onOpenChange }: ConnectionManager
     input.click();
   };
   
+  const handleCheckProxy = async () => {
+    setCheckingProxy(true);
+    await checkProxy();
+    setCheckingProxy(false);
+  };
+  
+  const handleSaveProxyUrl = () => {
+    setProxyUrl(proxyUrlInput);
+    toast.success('프록시 URL이 저장되었습니다.');
+    checkProxy();
+  };
+  
+  const renderProxySettings = () => (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 p-4 rounded-lg border border-border">
+        <div className={`w-3 h-3 rounded-full ${proxyConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+        <div className="flex-1">
+          <p className="font-medium">
+            {proxyConnected ? '프록시 서버 연결됨' : '프록시 서버 연결 안됨'}
+          </p>
+          <p className="text-sm text-muted-foreground">{proxyMessage}</p>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={handleCheckProxy}
+          disabled={checkingProxy}
+          className="gap-1.5"
+        >
+          <RefreshCw className={`w-4 h-4 ${checkingProxy ? 'animate-spin' : ''}`} />
+          상태 확인
+        </Button>
+      </div>
+      
+      <div className="space-y-2">
+        <Label htmlFor="proxyUrl">프록시 서버 URL</Label>
+        <div className="flex gap-2">
+          <Input
+            id="proxyUrl"
+            placeholder="http://localhost:3001"
+            value={proxyUrlInput}
+            onChange={(e) => setProxyUrlInput(e.target.value)}
+            className="flex-1"
+          />
+          <Button onClick={handleSaveProxyUrl} disabled={proxyUrlInput === proxyUrl}>
+            저장
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          실제 데이터베이스 연결을 위해서는 프록시 서버가 로컬에서 실행되어야 합니다.
+        </p>
+      </div>
+      
+      <div className="p-4 bg-muted rounded-lg space-y-3">
+        <h4 className="font-medium flex items-center gap-2">
+          <Server className="w-4 h-4" />
+          프록시 서버 설정 방법
+        </h4>
+        <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+          <li>프로젝트의 <code className="bg-background px-1 py-0.5 rounded">sql-proxy-server</code> 폴더로 이동</li>
+          <li><code className="bg-background px-1 py-0.5 rounded">npm install</code> 실행</li>
+          <li><code className="bg-background px-1 py-0.5 rounded">npm run dev</code>로 서버 시작</li>
+          <li>Oracle 연결 시 Oracle Instant Client 설치 필요</li>
+        </ol>
+      </div>
+      
+      <div className="flex justify-end">
+        <Button variant="outline" onClick={() => setView('list')}>
+          목록으로 돌아가기
+        </Button>
+      </div>
+    </div>
+  );
+  
   const renderList = () => (
     <div className="space-y-4">
+      {/* 프록시 상태 표시 */}
+      <div 
+        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 ${
+          proxyConnected ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'
+        }`}
+        onClick={() => setView('proxy')}
+      >
+        <div className={`w-2.5 h-2.5 rounded-full ${proxyConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">
+            {proxyConnected ? '프록시 서버 연결됨' : '프록시 서버 연결 안됨'}
+          </p>
+          <p className="text-xs text-muted-foreground truncate">{proxyUrl}</p>
+        </div>
+        <Button variant="ghost" size="sm" className="gap-1.5">
+          <Server className="w-4 h-4" />
+          설정
+        </Button>
+      </div>
+      
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
           <Button onClick={handleAddNew} size="sm" className="gap-1.5">
@@ -434,15 +567,19 @@ export function ConnectionManagerModal({ open, onOpenChange }: ConnectionManager
               {view === 'list' && '연결 관리'}
               {view === 'add' && '새 연결 추가'}
               {view === 'edit' && '연결 수정'}
+              {view === 'proxy' && '프록시 서버 설정'}
             </DialogTitle>
             <DialogDescription>
               {view === 'list' && '데이터베이스 연결을 관리하고, 설정을 내보내거나 불러올 수 있습니다.'}
               {view === 'add' && '새로운 데이터베이스 연결 정보를 입력하세요.'}
               {view === 'edit' && '연결 정보를 수정하세요.'}
+              {view === 'proxy' && '실제 DB 연결을 위한 프록시 서버를 설정합니다.'}
             </DialogDescription>
           </DialogHeader>
           
-          {view === 'list' ? renderList() : renderForm()}
+          {view === 'list' && renderList()}
+          {view === 'proxy' && renderProxySettings()}
+          {(view === 'add' || view === 'edit') && renderForm()}
         </DialogContent>
       </Dialog>
       

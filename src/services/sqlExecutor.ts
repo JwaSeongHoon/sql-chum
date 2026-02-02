@@ -1,20 +1,163 @@
 import { QueryResult, QueryError, detectQueryType } from '@/types/query';
-import { DBMSType } from '@/types/database';
+import { DBMSConfig } from '@/types/database';
 import { getMockData, parseMockQuery } from './mockData';
 
-// Simulated delay to mimic real database response
-const simulateDelay = () => new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
+// 프록시 서버 URL (로컬 환경)
+const DEFAULT_PROXY_URL = 'http://localhost:3001';
 
-export async function executeQuery(sql: string, dbms: DBMSType): Promise<QueryResult> {
+// 프록시 URL을 가져오는 함수 (스토어에서 관리)
+export function getProxyUrl(): string {
+  try {
+    const stored = localStorage.getItem('sql-editor-storage');
+    if (stored) {
+      const data = JSON.parse(stored);
+      return data.state?.proxyUrl || DEFAULT_PROXY_URL;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_PROXY_URL;
+}
+
+// 프록시 서버 상태 확인
+export async function checkProxyHealth(): Promise<{ 
+  connected: boolean; 
+  message: string;
+  supportedDBMS?: string[];
+}> {
+  try {
+    const response = await fetch(`${getProxyUrl()}/api/health`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000), // 3초 타임아웃
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        connected: true,
+        message: '프록시 서버가 실행 중입니다',
+        supportedDBMS: data.supportedDBMS,
+      };
+    }
+    
+    return {
+      connected: false,
+      message: '프록시 서버 응답 오류',
+    };
+  } catch (error: any) {
+    return {
+      connected: false,
+      message: error.name === 'TimeoutError' 
+        ? '프록시 서버 연결 시간 초과'
+        : '프록시 서버에 연결할 수 없습니다',
+    };
+  }
+}
+
+// 실제 데이터베이스 연결 테스트
+export async function testConnection(connection: DBMSConfig): Promise<{ 
+  success: boolean; 
+  message: string; 
+  version?: string;
+}> {
+  try {
+    const response = await fetch(`${getProxyUrl()}/api/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: connection.type,
+        host: connection.host,
+        port: connection.port,
+        database: connection.database,
+        username: connection.username,
+        password: connection.password,
+      }),
+      signal: AbortSignal.timeout(10000), // 10초 타임아웃
+    });
+    
+    const result = await response.json();
+    return result;
+  } catch (error: any) {
+    // 프록시 서버 연결 실패 시 목업 모드로 폴백
+    if (error.name === 'TypeError' || error.name === 'TimeoutError') {
+      console.warn('프록시 서버에 연결할 수 없습니다. 목업 모드로 전환합니다.');
+      return testConnectionMock(connection.type);
+    }
+    
+    return {
+      success: false,
+      message: error.message || '연결 테스트 중 오류가 발생했습니다',
+    };
+  }
+}
+
+// 목업 연결 테스트 (프록시 없이)
+function testConnectionMock(dbmsType: string): { success: boolean; message: string; version?: string } {
+  const versions: Record<string, string> = {
+    oracle: 'Oracle Database 11g XE (Mock Mode)',
+    mysql: 'MySQL 8.0 (Mock Mode)',
+    postgresql: 'PostgreSQL 15.4 (Mock Mode)',
+    mariadb: 'MariaDB 10.11 (Mock Mode)',
+    sqlserver: 'SQL Server 2022 (Mock Mode)',
+  };
+  
+  return {
+    success: true,
+    message: '목업 모드로 연결되었습니다 (프록시 서버 필요)',
+    version: versions[dbmsType] || 'Unknown (Mock Mode)',
+  };
+}
+
+// SQL 실행
+export async function executeQuery(sql: string, connection: DBMSConfig): Promise<QueryResult> {
   const startTime = performance.now();
   
-  await simulateDelay();
+  try {
+    const response = await fetch(`${getProxyUrl()}/api/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: connection.type,
+        host: connection.host,
+        port: connection.port,
+        database: connection.database,
+        username: connection.username,
+        password: connection.password,
+        sql: sql,
+      }),
+      signal: AbortSignal.timeout(30000), // 30초 타임아웃
+    });
+    
+    const result = await response.json();
+    return result;
+  } catch (error: any) {
+    // 프록시 서버 연결 실패 시 목업 모드로 폴백
+    if (error.name === 'TypeError' || error.name === 'TimeoutError') {
+      console.warn('프록시 서버에 연결할 수 없습니다. 목업 모드로 실행합니다.');
+      return executeQueryMock(sql, startTime);
+    }
+    
+    return {
+      success: false,
+      error: {
+        code: 'ERR-NETWORK',
+        message: error.message || '쿼리 실행 중 네트워크 오류가 발생했습니다',
+      },
+      executionTime: (performance.now() - startTime) / 1000,
+    };
+  }
+}
+
+// 목업 쿼리 실행 (프록시 없이)
+async function executeQueryMock(sql: string, startTime: number): Promise<QueryResult> {
+  // 기존 목업 로직 유지
+  await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));
   
   const queryType = detectQueryType(sql);
   const trimmedSql = sql.trim();
   
   // Check for common errors
-  const error = validateQuery(trimmedSql);
+  const error = validateQueryMock(trimmedSql);
   if (error) {
     return {
       success: false,
@@ -25,9 +168,9 @@ export async function executeQuery(sql: string, dbms: DBMSType): Promise<QueryRe
   
   try {
     if (queryType === 'SELECT') {
-      return executeSelectQuery(trimmedSql, startTime);
+      return executeSelectQueryMock(trimmedSql, startTime);
     } else if (queryType === 'INSERT' || queryType === 'UPDATE' || queryType === 'DELETE') {
-      return executeDMLQuery(queryType, startTime);
+      return executeDMLQueryMock(queryType, startTime);
     } else {
       return {
         success: true,
@@ -40,17 +183,16 @@ export async function executeQuery(sql: string, dbms: DBMSType): Promise<QueryRe
       success: false,
       error: {
         code: 'ERR-001',
-        message: err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다',
+        message: err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다 (Mock Mode)',
       },
       executionTime: (performance.now() - startTime) / 1000,
     };
   }
 }
 
-function validateQuery(sql: string): QueryError | null {
+function validateQueryMock(sql: string): QueryError | null {
   const upperSql = sql.toUpperCase();
   
-  // Check for known invalid tables
   const fromMatch = sql.match(/FROM\s+(\w+)/i);
   if (fromMatch) {
     const tableName = fromMatch[1].toLowerCase();
@@ -64,14 +206,13 @@ function validateQuery(sql: string): QueryError | null {
       
       return {
         code: 'ORA-00942',
-        message: '테이블 또는 뷰가 존재하지 않습니다',
+        message: '테이블 또는 뷰가 존재하지 않습니다 (Mock Mode)',
         line: lineNumber,
         position: columnPosition + 1,
       };
     }
   }
   
-  // Check for syntax errors (very basic)
   if (upperSql.startsWith('SELECT') && !upperSql.includes('FROM')) {
     return {
       code: 'ORA-00923',
@@ -84,7 +225,7 @@ function validateQuery(sql: string): QueryError | null {
   return null;
 }
 
-function executeSelectQuery(sql: string, startTime: number): QueryResult {
+function executeSelectQueryMock(sql: string, startTime: number): QueryResult {
   const parsed = parseMockQuery(sql);
   
   if (!parsed.table) {
@@ -104,14 +245,13 @@ function executeSelectQuery(sql: string, startTime: number): QueryResult {
       success: false,
       error: {
         code: 'ORA-00942',
-        message: '테이블 또는 뷰가 존재하지 않습니다',
+        message: '테이블 또는 뷰가 존재하지 않습니다 (Mock Mode)',
         line: 1,
         position: sql.toLowerCase().indexOf(parsed.table) + 1,
       },
     };
   }
   
-  // Apply WHERE filter
   if (Object.keys(parsed.where).length > 0) {
     data = data.filter(row => {
       return Object.entries(parsed.where).every(([key, value]) => {
@@ -120,7 +260,6 @@ function executeSelectQuery(sql: string, startTime: number): QueryResult {
     });
   }
   
-  // Apply ORDER BY
   if (parsed.orderBy) {
     const { column, direction } = parsed.orderBy;
     data = [...data].sort((a, b) => {
@@ -134,7 +273,6 @@ function executeSelectQuery(sql: string, startTime: number): QueryResult {
     });
   }
   
-  // Get columns
   const allColumns = data.length > 0 ? Object.keys(data[0]) : [];
   const selectedColumns = parsed.columns === '*' 
     ? allColumns 
@@ -142,7 +280,6 @@ function executeSelectQuery(sql: string, startTime: number): QueryResult {
   
   const columns = selectedColumns.length > 0 ? selectedColumns : allColumns;
   
-  // Build rows
   const rows = data.map(row => 
     columns.map(col => row[col] ?? null)
   );
@@ -158,32 +295,12 @@ function executeSelectQuery(sql: string, startTime: number): QueryResult {
   };
 }
 
-function executeDMLQuery(type: string, startTime: number): QueryResult {
-  // Simulate affected rows
+function executeDMLQueryMock(type: string, startTime: number): QueryResult {
   const affectedRows = Math.floor(Math.random() * 10) + 1;
   
   return {
     success: true,
     affectedRows,
     executionTime: (performance.now() - startTime) / 1000,
-  };
-}
-
-export async function testConnection(dbms: DBMSType): Promise<{ success: boolean; message: string; version?: string }> {
-  await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
-  
-  const versions: Record<DBMSType, string> = {
-    oracle: 'Oracle Database 11g Express Edition Release 11.2.0.2.0',
-    mysql: 'MySQL 8.0.35',
-    postgresql: 'PostgreSQL 15.4',
-    mariadb: 'MariaDB 10.11.6',
-    sqlserver: 'Microsoft SQL Server 2022',
-  };
-  
-  // Always succeed for demo
-  return {
-    success: true,
-    message: '성공적으로 연결되었습니다',
-    version: versions[dbms],
   };
 }
