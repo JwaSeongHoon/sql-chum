@@ -5,6 +5,7 @@ import { ConnectionStatus } from '@/components/ConnectionStatus';
 import { SqlEditor } from '@/components/SqlEditor';
 import { ActionButtons } from '@/components/ActionButtons';
 import { ResultsPanel } from '@/components/ResultsPanel';
+import { NaturalLanguageInput } from '@/components/NaturalLanguageInput';
 import { useSQLEditorStore } from '@/store/sqlEditorStore';
 
 const Index = () => {
@@ -32,18 +33,23 @@ const Index = () => {
             </div>
           </div>
           
-          {/* SQL Editor */}
+          {/* Natural Language Input */}
           <div className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
+            <NaturalLanguageInput />
+          </div>
+          
+          {/* SQL Editor */}
+          <div className="animate-fade-in" style={{ animationDelay: '0.2s' }}>
             <SqlEditor />
           </div>
           
           {/* Action buttons */}
-          <div className="bg-card rounded-xl border border-border px-4 shadow-soft animate-fade-in" style={{ animationDelay: '0.2s' }}>
+          <div className="bg-card rounded-xl border border-border px-4 shadow-soft animate-fade-in" style={{ animationDelay: '0.3s' }}>
             <ActionButtons />
           </div>
           
           {/* Results */}
-          <div className="animate-fade-in" style={{ animationDelay: '0.3s' }}>
+          <div className="animate-fade-in" style={{ animationDelay: '0.4s' }}>
             <ResultsPanel />
           </div>
         </div>
