@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { 
-  Table, 
   ArrowUpDown, 
   ArrowUp, 
   ArrowDown, 
@@ -9,10 +8,19 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Table as TableIcon
 } from 'lucide-react';
 import { useSQLEditorStore } from '@/store/sqlEditorStore';
 import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
@@ -81,45 +89,62 @@ export function DataTable() {
       description: '결과가 클립보드에 복사되었습니다.',
     });
   };
+
+  const handleExportCSV = () => {
+    if (!data) return;
+    
+    const csvContent = [
+      data.columns.join(','),
+      ...sortedRows.map(row => 
+        row.map(cell => {
+          if (cell === null) return '';
+          const str = String(cell);
+          return str.includes(',') ? `"${str}"` : str;
+        }).join(',')
+      )
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `query_result_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: '내보내기 완료',
+      description: 'CSV 파일이 다운로드되었습니다.',
+    });
+  };
   
   if (!data) return null;
   
   return (
     <div className="space-y-3">
       {/* Stats bar */}
-      <div className="flex items-center justify-between text-sm">
-        <div className="flex items-center gap-4 text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Table className="w-4 h-4" />
-            <span>행: <strong className="text-foreground">{data.rowCount}개</strong></span>
-          </span>
-          <span>
-            실행 시간: <strong className="text-foreground">{data.executionTime.toFixed(3)}초</strong>
-          </span>
-        </div>
-        
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handleCopyResults}
-          className="gap-1.5 text-muted-foreground hover:text-foreground"
-        >
-          <Copy className="w-4 h-4" />
-          결과 복사
-        </Button>
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <TableIcon className="w-4 h-4" />
+          <span>실행 시간: <strong className="text-foreground">{data.executionTime.toFixed(3)}초</strong></span>
+        </span>
+        <span className="text-border">|</span>
+        <span>
+          행: <strong className="text-foreground">{data.rowCount}개</strong>
+        </span>
       </div>
       
       {/* Table */}
       <div className="border border-border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="results-table">
-            <thead>
-              <tr>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50 hover:bg-muted/50">
                 {data.columns.map((column, idx) => (
-                  <th
+                  <TableHead
                     key={idx}
                     onClick={() => handleSort(idx)}
-                    className="select-none whitespace-nowrap"
+                    className="cursor-pointer select-none whitespace-nowrap font-semibold"
                   >
                     <span className="flex items-center gap-1.5">
                       {column}
@@ -133,15 +158,15 @@ export function DataTable() {
                         <ArrowUpDown className="w-3.5 h-3.5 opacity-30" />
                       )}
                     </span>
-                  </th>
+                  </TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {paginatedRows.map((row, rowIdx) => (
-                <tr key={rowIdx}>
+                <TableRow key={rowIdx}>
                   {row.map((cell, cellIdx) => (
-                    <td 
+                    <TableCell 
                       key={cellIdx}
                       className={cn(
                         'whitespace-nowrap font-mono text-sm',
@@ -149,23 +174,45 @@ export function DataTable() {
                       )}
                     >
                       {cell === null ? 'NULL' : String(cell)}
-                    </td>
+                    </TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       </div>
       
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            {((currentPage - 1) * ROWS_PER_PAGE) + 1} - {Math.min(currentPage * ROWS_PER_PAGE, sortedRows.length)} / {sortedRows.length} 행
-          </span>
-          
+      {/* Footer with pagination and actions */}
+      <div className="flex items-center justify-between">
+        {/* Action buttons */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCopyResults}
+            className="gap-1.5"
+          >
+            <Copy className="w-4 h-4" />
+            결과 복사
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCSV}
+            className="gap-1.5"
+          >
+            <Download className="w-4 h-4" />
+            CSV 내보내기
+          </Button>
+        </div>
+        
+        {/* Pagination */}
+        {totalPages > 1 && (
           <div className="flex items-center gap-1">
+            <span className="text-sm text-muted-foreground mr-2">
+              {((currentPage - 1) * ROWS_PER_PAGE) + 1} - {Math.min(currentPage * ROWS_PER_PAGE, sortedRows.length)} / {sortedRows.length}
+            </span>
             <Button
               variant="ghost"
               size="icon"
@@ -184,11 +231,9 @@ export function DataTable() {
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
-            
-            <span className="px-3 text-muted-foreground">
+            <span className="px-2 text-sm text-muted-foreground">
               {currentPage} / {totalPages}
             </span>
-            
             <Button
               variant="ghost"
               size="icon"
@@ -208,8 +253,8 @@ export function DataTable() {
               <ChevronsRight className="w-4 h-4" />
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
