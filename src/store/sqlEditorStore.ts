@@ -43,7 +43,7 @@ export const useSQLEditorStore = create<SQLEditorState>()(
         status: 'disconnected',
         dbms: null,
       },
-      sql: '',
+      sql: 'SELECT * FROM emp;',
       isExecuting: false,
       result: null,
       history: [],
