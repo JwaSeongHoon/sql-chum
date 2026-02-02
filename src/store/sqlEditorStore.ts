@@ -2,9 +2,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DBMSConfig, ConnectionState, DEFAULT_CONNECTIONS, DBMS_TYPE_CONFIGS } from '@/types/database';
 import { QueryResult, QueryHistoryItem } from '@/types/query';
-import { testConnection, executeQuery } from '@/services/sqlExecutor';
+import { testConnection, executeQuery, checkProxyHealth } from '@/services/sqlExecutor';
 
 interface SQLEditorState {
+  // Proxy Settings
+  proxyUrl: string;
+  proxyConnected: boolean;
+  proxyMessage: string;
+  
   // Connections
   userConnections: DBMSConfig[];
   selectedConnectionId: string | null;
@@ -19,6 +24,10 @@ interface SQLEditorState {
   
   // History
   history: QueryHistoryItem[];
+  
+  // Proxy Actions
+  setProxyUrl: (url: string) => void;
+  checkProxy: () => Promise<void>;
   
   // Connection CRUD Actions
   addConnection: (connection: Omit<DBMSConfig, 'id' | 'createdAt' | 'updatedAt'>) => void;
@@ -59,7 +68,12 @@ const generateId = () => `conn-${Date.now()}-${Math.random().toString(36).substr
 export const useSQLEditorStore = create<SQLEditorState>()(
   persist(
     (set, get) => ({
-      // Initial state
+      // Initial state - Proxy
+      proxyUrl: 'http://localhost:3001',
+      proxyConnected: false,
+      proxyMessage: '프록시 서버 상태를 확인하세요',
+      
+      // Initial state - Connections
       userConnections: [],
       selectedConnectionId: null,
       connection: {
@@ -70,6 +84,17 @@ export const useSQLEditorStore = create<SQLEditorState>()(
       isExecuting: false,
       result: null,
       history: [],
+      
+      // Proxy Actions
+      setProxyUrl: (url) => set({ proxyUrl: url }),
+      
+      checkProxy: async () => {
+        const result = await checkProxyHealth();
+        set({
+          proxyConnected: result.connected,
+          proxyMessage: result.message,
+        });
+      },
       
       // Connection CRUD
       addConnection: (connectionData) => {
@@ -178,7 +203,7 @@ export const useSQLEditorStore = create<SQLEditorState>()(
           },
         });
         
-        const result = await testConnection(selectedConnection.type);
+        const result = await testConnection(selectedConnection);
         
         if (result.success) {
           set({
@@ -219,7 +244,7 @@ export const useSQLEditorStore = create<SQLEditorState>()(
         
         set({ isExecuting: true, result: null });
         
-        const result = await executeQuery(sql, selectedConnection.type);
+        const result = await executeQuery(sql, selectedConnection);
         
         set({ result, isExecuting: false });
         
@@ -266,6 +291,7 @@ export const useSQLEditorStore = create<SQLEditorState>()(
     {
       name: 'sql-editor-storage',
       partialize: (state) => ({
+        proxyUrl: state.proxyUrl,
         userConnections: state.userConnections,
         history: state.history,
         selectedConnectionId: state.selectedConnectionId,
