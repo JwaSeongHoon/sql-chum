@@ -170,7 +170,7 @@ function executeDMLQuery(type: string, startTime: number): QueryResult {
 }
 
 export async function testConnection(dbms: DBMSType): Promise<{ success: boolean; message: string; version?: string }> {
-  await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 500));
+  await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
   
   const versions: Record<DBMSType, string> = {
     oracle: 'Oracle Database 11g Express Edition Release 11.2.0.2.0',
@@ -180,17 +180,10 @@ export async function testConnection(dbms: DBMSType): Promise<{ success: boolean
     sqlserver: 'Microsoft SQL Server 2022',
   };
   
-  // 90% success rate for demo
-  if (Math.random() > 0.1) {
-    return {
-      success: true,
-      message: '성공적으로 연결되었습니다',
-      version: versions[dbms],
-    };
-  }
-  
+  // Always succeed for demo
   return {
-    success: false,
-    message: '연결에 실패했습니다. 호스트를 확인해주세요.',
+    success: true,
+    message: '성공적으로 연결되었습니다',
+    version: versions[dbms],
   };
 }
