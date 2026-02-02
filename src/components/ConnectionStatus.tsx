@@ -1,18 +1,20 @@
 import { RefreshCw } from 'lucide-react';
 import { useSQLEditorStore } from '@/store/sqlEditorStore';
-import { DBMS_CONFIGS, DEFAULT_CREDENTIALS } from '@/types/database';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export function ConnectionStatus() {
-  const { connection, selectedDbms, connect } = useSQLEditorStore();
-  
-  const config = DBMS_CONFIGS.find(c => c.id === selectedDbms);
+  const { connection, getSelectedConnection, connect } = useSQLEditorStore();
+  const selectedConnection = getSelectedConnection();
   
   const getStatusText = () => {
+    if (!selectedConnection) {
+      return '연결 선택 필요';
+    }
+    
     switch (connection.status) {
       case 'connected':
-        return `연결됨 (${DEFAULT_CREDENTIALS.username}@${config?.name?.toLowerCase()}:${config?.port})`;
+        return `연결됨 (${selectedConnection.username}@${selectedConnection.host}:${selectedConnection.port})`;
       case 'connecting':
         return '연결 중...';
       case 'error':
@@ -23,6 +25,8 @@ export function ConnectionStatus() {
   };
   
   const getStatusDotClass = () => {
+    if (!selectedConnection) return 'status-disconnected';
+    
     switch (connection.status) {
       case 'connected':
         return 'status-connected';
@@ -46,13 +50,13 @@ export function ConnectionStatus() {
           connection.status === 'connected' && 'text-success',
           connection.status === 'error' && 'text-destructive',
           connection.status === 'connecting' && 'text-warning',
-          connection.status === 'disconnected' && 'text-muted-foreground'
+          (connection.status === 'disconnected' || !selectedConnection) && 'text-muted-foreground'
         )}>
           {getStatusText()}
         </span>
       </div>
       
-      {connection.status !== 'connecting' ? (
+      {connection.status !== 'connecting' && selectedConnection ? (
         <Button
           variant="ghost"
           size="sm"
@@ -61,9 +65,9 @@ export function ConnectionStatus() {
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </Button>
-      ) : (
+      ) : connection.status === 'connecting' ? (
         <RefreshCw className="w-3.5 h-3.5 animate-spin text-warning" />
-      )}
+      ) : null}
     </div>
   );
 }

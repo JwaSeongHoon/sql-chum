@@ -13,18 +13,19 @@ export function ActionButtons() {
     clearEditor, 
     isExecuting, 
     connection, 
-    selectedDbms,
+    getSelectedConnection,
     result 
   } = useSQLEditorStore();
   
   const [historyOpen, setHistoryOpen] = useState(false);
+  const selectedConnection = getSelectedConnection();
   
   const canExecute = sql.trim() && connection.status === 'connected' && !isExecuting;
   const hasSelectResult = result?.success && result.data?.rows && result.data.rows.length > 0;
   
   const handleFormat = () => {
-    if (sql.trim()) {
-      const formatted = formatSQL(sql, selectedDbms);
+    if (sql.trim() && selectedConnection) {
+      const formatted = formatSQL(sql, selectedConnection.type);
       setSql(formatted);
     }
   };

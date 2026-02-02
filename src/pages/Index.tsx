@@ -8,14 +8,14 @@ import { ResultsPanel } from '@/components/ResultsPanel';
 import { useSQLEditorStore } from '@/store/sqlEditorStore';
 
 const Index = () => {
-  const { connect, connection } = useSQLEditorStore();
+  const { connect, connection, selectedConnectionId } = useSQLEditorStore();
   
-  // Auto-connect on mount
+  // Auto-connect on mount when a connection is selected
   useEffect(() => {
-    if (connection.status === 'disconnected') {
+    if (connection.status === 'disconnected' && selectedConnectionId) {
       connect();
     }
-  }, []);
+  }, [selectedConnectionId]);
   
   return (
     <div className="min-h-screen bg-background flex flex-col">
