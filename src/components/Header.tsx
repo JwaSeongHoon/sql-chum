@@ -1,7 +1,10 @@
 import { Database, User } from 'lucide-react';
-import { DEFAULT_CREDENTIALS } from '@/types/database';
+import { useSQLEditorStore } from '@/store/sqlEditorStore';
 
 export function Header() {
+  const { getSelectedConnection } = useSQLEditorStore();
+  const selectedConnection = getSelectedConnection();
+  
   return (
     <header className="bg-card border-b border-border px-6 py-4 shadow-soft">
       <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
@@ -21,7 +24,9 @@ export function Header() {
         
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <User className="w-4 h-4" />
-          <span className="font-medium text-foreground">{DEFAULT_CREDENTIALS.username}</span>
+          <span className="font-medium text-foreground">
+            {selectedConnection?.username || 'Not connected'}
+          </span>
         </div>
       </div>
     </header>

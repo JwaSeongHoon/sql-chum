@@ -13,7 +13,8 @@ SELECT * FROM emp;`;
 
 export function SqlEditor() {
   const editorRef = useRef<MonacoEditor | null>(null);
-  const { sql, setSql, execute, connection, selectedDbms, clearEditor } = useSQLEditorStore();
+  const { sql, setSql, execute, connection, getSelectedConnection, clearEditor } = useSQLEditorStore();
+  const selectedConnection = getSelectedConnection();
   
   const handleEditorDidMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -27,8 +28,10 @@ export function SqlEditor() {
     
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
       const currentValue = editor.getValue();
-      const formatted = formatSQL(currentValue, selectedDbms);
-      editor.setValue(formatted);
+      if (selectedConnection) {
+        const formatted = formatSQL(currentValue, selectedConnection.type);
+        editor.setValue(formatted);
+      }
     });
     
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyK, () => {
@@ -37,7 +40,7 @@ export function SqlEditor() {
     
     // Focus editor
     editor.focus();
-  }, [connection.status, execute, selectedDbms, clearEditor]);
+  }, [connection.status, execute, selectedConnection, clearEditor]);
   
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     // Define custom SQL theme
